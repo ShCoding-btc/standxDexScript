@@ -1,0 +1,28 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment & local config
+.env
+.env.*
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+*.pid
+*.seed
+
+# Coverage / test
+coverage/
+.nyc_output/
+
+# Build outputs
+dist/
+build/
+
