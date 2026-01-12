@@ -9,6 +9,7 @@ import { tradingConfig } from '../config.js';
 
 const chain = tradingConfig.chain; // 从 config.js 中读取
 const expiresSeconds = tradingConfig.expiresSeconds; // 从 config.js 中读取
+const refreshTokenSeconds = tradingConfig.refreshTokenSeconds; // 从 config.js 中读取
 
 // 从.env读取或生成钱包
 let walletAddress = process.env.WALLET_ADDRESS;
@@ -140,12 +141,12 @@ async function getToken() {
 export async function initToken() {
   const token = await getToken();
   if (token) {
-    console.log('Token定时刷新流程启动，间隔时长为'+expiresSeconds+'秒');
-    // 每expiresSeconds秒刷新一次
+    console.log('Token定时刷新流程启动，间隔时长为'+refreshTokenSeconds+'秒');
+    // 每refreshTokenSeconds秒刷新一次
     setInterval(async () => {
       console.log('刷新token');
       await getToken();
-    }, expiresSeconds * 1000);
+    }, refreshTokenSeconds * 1000);
     return token;
   } else {
     console.log('初始token获取失败');

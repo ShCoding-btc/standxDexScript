@@ -93,10 +93,43 @@ async function getUserAllOrders() {
   }
 }
 
+// 重试获取未完成订单（最多3次）
+async function getUserAllOrdersWithRetry(maxRetries = 3, delayMs = 500) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await getUserAllOrders();
+      if (result && result.result) {
+        return result;
+      }
+      throw new Error('获取订单为空');
+    } catch (error) {
+      lastError = error;
+      console.error(`获取未完成订单失败，第${attempt}/${maxRetries}次尝试`, error.response?.data || error.message);
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError || new Error('多次获取未完成订单失败');
+}
+
 // 取消用户所有订单
 async function cancelAllOrders() {
-  const orderResponse = await getUserAllOrders();
+  let orderResponse;
+  try {
+    orderResponse = await getUserAllOrdersWithRetry();
+  } catch (error) {
+    console.error('获取订单失败，无法取消订单:', error.message || error);
+    return;
+  }
+
   const clOrdIds = orderResponse.result.map(order => order.cl_ord_id);
+  if (!clOrdIds.length) {
+    console.log('当前无未完成订单，无需取消');
+    return;
+  }
+
   console.log('当前要取消订单列表:', clOrdIds);
   const payload = JSON.stringify({
     cl_ord_id_list: clOrdIds // 使用提取的 cl_ord_id 列表

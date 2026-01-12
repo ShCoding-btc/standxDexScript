@@ -3,7 +3,8 @@ export const tradingConfig = {
   // 交易对
   symbol: 'BTC-USD',
   chain: 'bsc',
-  expiresSeconds: 3600,
+  expiresSeconds: 3600,//token生效时间
+  refreshTokenSeconds: 3400,//token刷新阈值
   // 订单配置
   order: {
     // 订单数量（用于创建买入和卖出订单买入卖出同数量）
