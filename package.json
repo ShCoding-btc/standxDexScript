@@ -1,0 +1,24 @@
+{
+  "name": "standxdexscript",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "limit": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1",
+    "@scure/base": "^2.0.0",
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.16.0",
+    "uuid": "^13.0.0",
+    "ws": "^8.19.0"
+  }
+}
