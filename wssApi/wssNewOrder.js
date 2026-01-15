@@ -2,7 +2,7 @@ import 'dotenv/config';
 import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { encodeRequestSignature } from '../util/authUtil.js';
-import {  cancelAllOrders  } from '../httpApi/httpApi.js';
+import { cancelAllOrders, closeAllPositions, queryPositions } from '../httpApi/httpApi.js';
 import crypto from 'crypto';
 import StandXWebSocket from "./wssQueryMarketPrice.js";
 import { tradingConfig } from '../config.js';
@@ -15,6 +15,8 @@ class StandXOrderWebSocket {
     this.firstFlag = true;
     this.adjustedPrice_buy = null;
     this.adjustedPrice_sell = null;
+    this.lastClosePositionTime = 0; // 上次平仓时间，用于防止频繁平仓
+    this.closePositionInterval = 5000; // 平仓间隔时间（毫秒），5秒内不重复平仓
 
     this.ws.on('open', () => {
       this.authenticate();
@@ -27,8 +29,9 @@ class StandXOrderWebSocket {
         if (message.message === 'login success') {
           console.log('ws-api服务连接成功，开始查询市场价格...');
           var that = this;
-          new StandXWebSocket(tradingConfig.symbol, (priceMessage) => {
-            console.log('当前'+tradingConfig.symbol+'市场价格:'+priceMessage.data.mark_price+" 当前挂单买入价："+that.adjustedPrice_buy+" 当前挂单卖出价："+that.adjustedPrice_sell);
+          new StandXWebSocket(tradingConfig.symbol, async (priceMessage) => {
+            console.log('当前市场价格:'+priceMessage.data.mark_price+" 当前挂单买入价："+that.adjustedPrice_buy+" 当前挂单卖出价："+that.adjustedPrice_sell);
+            
             if (that.firstFlag) {
               // 首次下单
               const markPrice = parseFloat(priceMessage.data.mark_price);
@@ -51,6 +54,9 @@ class StandXOrderWebSocket {
               
               that.firstFlag = false;
             } else {
+              // 首次下单后，在后续价格更新时检测持仓并平仓
+              await that.checkAndClosePositions();
+              
               // 在后续价格更新时也进行检查
               if (that.adjustedPrice_buy !== null && that.adjustedPrice_sell !== null) {
                 const markPrice = parseFloat(priceMessage.data.mark_price);
@@ -141,6 +147,35 @@ class StandXOrderWebSocket {
     };
 
     this.ws.send(JSON.stringify(message));
+  }
+
+  // 检测持仓并平仓
+  async checkAndClosePositions() {
+    try {
+      // 防止频繁平仓，检查时间间隔
+      const now = Date.now();
+      if (now - this.lastClosePositionTime < this.closePositionInterval) {
+        return;
+      }
+
+      // 查询持仓（静默模式，避免频繁日志输出）
+      const positions = await queryPositions(null, true);
+      
+      if (!positions || positions.length === 0) {
+        return;
+      }
+
+      // 过滤出状态为 open 的持仓
+      const openPositions = positions.filter(pos => pos.status === 'open' && parseFloat(pos.qty) !== 0);
+      
+      if (openPositions.length > 0) {
+        console.log(`检测到 ${openPositions.length} 个开放持仓，开始自动平仓...`);
+        this.lastClosePositionTime = now;
+        await closeAllPositions();
+      }
+    } catch (error) {
+      console.error('检测持仓并平仓时出错:', error.message);
+    }
   }
 }
 
