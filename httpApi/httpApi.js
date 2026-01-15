@@ -283,10 +283,10 @@ async function main() {
    //await cancelAllOrders(); // 取消注释以测试取消所有订单  
 
    // 市价平仓（需要认证）
-   await closeAllPositions(); // 取消注释以测试市价平仓
+  // await closeAllPositions(); // 取消注释以测试市价平仓
 }
 
 // 运行主函数
-main();
+//main();
 
 export { createOrder, getAccountInfo, getMarketData, getUserAllOrders, cancelAllOrders, queryPositions, closeAllPositions };
