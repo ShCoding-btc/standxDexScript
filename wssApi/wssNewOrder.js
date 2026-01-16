@@ -2,7 +2,8 @@ import 'dotenv/config';
 import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { encodeRequestSignature } from '../util/authUtil.js';
-import { cancelAllOrders, closeAllPositions, queryPositions } from '../httpApi/httpApi.js';
+import { cancelAllOrders, closeAllPositions, queryPositions, calculateOrderQuantity } from '../httpApi/httpApi.js';
+import { sendDingTalkMsg } from '../util/dingTalk.js';
 import crypto from 'crypto';
 import StandXWebSocket from "./wssQueryMarketPrice.js";
 import { tradingConfig } from '../config.js';
@@ -49,7 +50,7 @@ class StandXOrderWebSocket {
               if (diffBuy < tradingConfig.price.diffThreshold.min || diffSell < tradingConfig.price.diffThreshold.min || diffBuy > tradingConfig.price.diffThreshold.max || diffSell > tradingConfig.price.diffThreshold.max) {
                 console.log(`首次下单时价格差值不符合要求，跳过下单。买入差值: ${diffBuy.toFixed(4)}%，卖出差值: ${diffSell.toFixed(4)}%`);
               } else {
-                that.createOrders(markPrice);
+                await that.createOrders(markPrice);
               }
               
               that.firstFlag = false;
@@ -65,9 +66,9 @@ class StandXOrderWebSocket {
                 
                 if (diffBuy < tradingConfig.price.diffThreshold.min || diffSell < tradingConfig.price.diffThreshold.min || diffBuy > tradingConfig.price.diffThreshold.max || diffSell > tradingConfig.price.diffThreshold.max) {
                   console.log(`价格差值不符合要求，取消所有订单。买入差值: ${diffBuy.toFixed(4)}%，卖出差值: ${diffSell.toFixed(4)}%`);
-                  cancelAllOrders().then(() => {
+                  cancelAllOrders().then(async () => {
                     // 取消订单后重新下单
-                    that.createOrders(markPrice);
+                    await that.createOrders(markPrice);
                   });
                 }
               }
@@ -77,12 +78,27 @@ class StandXOrderWebSocket {
       }
     });
 
-    this.ws.on('error', (error) => {
+    this.ws.on('error', async (error) => {
       console.error('ws-api连接失败，失败原因:', error);
+      // 发送钉钉推送通知
+      const errorMsg = `⚠️ WebSocket连接错误\n\n` +
+        `**连接类型**: ws-api\n` +
+        `**错误信息**: ${error.message || JSON.stringify(error)}\n` +
+        `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
+        `请及时检查连接状态！`;
+      await sendDingTalkMsg(errorMsg);
     });
 
-    this.ws.on('close', () => {
-      console.log('ws-api连接关闭');
+    this.ws.on('close', async (code, reason) => {
+      console.log('ws-api连接关闭', code, reason?.toString());
+      // 发送钉钉推送通知
+      const closeMsg = `⚠️ WebSocket连接已断开\n\n` +
+        `**连接类型**: ws-api\n` +
+        `**关闭代码**: ${code}\n` +
+        `**关闭原因**: ${reason?.toString() || '未知'}\n` +
+        `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
+        `请及时检查连接状态！`;
+      await sendDingTalkMsg(closeMsg);
     });
   }
  //认证登录 
@@ -106,7 +122,7 @@ class StandXOrderWebSocket {
     this.ws.send(JSON.stringify(message));
   }
   // 根据市场价格创建买入和卖出订单
-  createOrders(markPrice) {
+  async createOrders(markPrice) {
     // 以低于当前市场价格的adjustmentRatio进行下单
     const basePrice = parseFloat(markPrice) * tradingConfig.price.adjustmentRatio;
     const adjustedPrice_buy = (parseFloat(markPrice) - basePrice).toFixed(2);
@@ -114,9 +130,13 @@ class StandXOrderWebSocket {
     // 保存调整后的价格
     this.adjustedPrice_buy = parseFloat(adjustedPrice_buy);
     this.adjustedPrice_sell = parseFloat(adjustedPrice_sell);
+    
+    // 动态计算订单数量（需要传入市场价格）
+    const quantity = await calculateOrderQuantity(markPrice);
+    
     // 下订单
-    this.placeOrder(tradingConfig.symbol, 'buy', 'limit', adjustedPrice_buy, tradingConfig.order.quantity);
-    this.placeOrder(tradingConfig.symbol, 'sell', 'limit', adjustedPrice_sell, tradingConfig.order.quantity);
+    this.placeOrder(tradingConfig.symbol, 'buy', 'limit', adjustedPrice_buy, quantity);
+    this.placeOrder(tradingConfig.symbol, 'sell', 'limit', adjustedPrice_sell, quantity);
   }
 
   //下订单 参数分别为：交易对，方向（buy/sell），订单类型（limit，market），开单价格，开单数量
@@ -171,10 +191,34 @@ class StandXOrderWebSocket {
       if (openPositions.length > 0) {
         console.log(`检测到 ${openPositions.length} 个开放持仓，开始自动平仓...`);
         this.lastClosePositionTime = now;
-        await closeAllPositions();
+        const closeResults = await closeAllPositions();
+        
+        // 检查平仓结果，如果有失败则发送钉钉通知
+        if (closeResults && closeResults.length > 0) {
+          const failedResults = closeResults.filter(r => r.error);
+          if (failedResults.length > 0) {
+            const errorDetails = failedResults.map(r => 
+              `- ${r.symbol}: ${r.side} ${r.qty} - ${r.error}`
+            ).join('\n');
+            
+            const errorMsg = `❌ 平仓操作失败\n\n` +
+              `**失败数量**: ${failedResults.length}/${closeResults.length}\n` +
+              `**失败详情**:\n${errorDetails}\n` +
+              `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
+              `请及时检查并手动处理！`;
+            await sendDingTalkMsg(errorMsg);
+          }
+        }
       }
     } catch (error) {
       console.error('检测持仓并平仓时出错:', error.message);
+      // 发送钉钉推送通知
+      const errorMsg = `❌ 检测持仓并平仓时出错\n\n` +
+        `**错误信息**: ${error.message}\n` +
+        `**错误堆栈**: ${error.stack || '无'}\n` +
+        `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
+        `请及时检查系统状态！`;
+      await sendDingTalkMsg(errorMsg);
     }
   }
 }

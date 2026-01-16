@@ -2,6 +2,8 @@ import 'dotenv/config';
 import axios from "axios";
 import crypto from 'crypto';
 import { encodeRequestSignature } from "../util/authUtil.js";
+import { tradingConfig } from "../config.js";
+import { sendDingTalkMsg } from "../util/dingTalk.js";
 
 // 从.env加载token
 const token = process.env.TOKEN;
@@ -208,6 +210,16 @@ async function closeAllPositions(symbol = null) {
 
     console.log(`找到 ${openPositions.length} 个开放持仓，开始平仓...`);
     
+    // 平仓前先取消所有挂单
+    console.log('平仓前先取消所有挂单...');
+    try {
+      await cancelAllOrders();
+      console.log('所有挂单已取消');
+    } catch (error) {
+      console.error('取消挂单时出错:', error.message);
+      // 即使取消订单失败，也继续尝试平仓
+    }
+    
     const closeResults = [];
     
     // 对每个持仓创建平仓订单
@@ -256,10 +268,38 @@ async function closeAllPositions(symbol = null) {
       }
     }
     
-    console.log(`平仓操作完成，成功: ${closeResults.filter(r => r.result).length}, 失败: ${closeResults.filter(r => r.error).length}`);
+    const successCount = closeResults.filter(r => r.result).length;
+    const failCount = closeResults.filter(r => r.error).length;
+    console.log(`平仓操作完成，成功: ${successCount}, 失败: ${failCount}`);
+    
+    // 如果有失败，发送钉钉推送
+    if (failCount > 0) {
+      const errorDetails = closeResults
+        .filter(r => r.error)
+        .map(r => `- ${r.symbol}: ${r.side} ${r.qty} - ${typeof r.error === 'object' ? JSON.stringify(r.error) : r.error}`)
+        .join('\n');
+      
+      const errorMsg = `❌ 市价平仓操作失败\n\n` +
+        `**失败数量**: ${failCount}/${closeResults.length}\n` +
+        `**成功数量**: ${successCount}\n` +
+        `**失败详情**:\n${errorDetails}\n` +
+        `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
+        `请及时检查并手动处理！`;
+      await sendDingTalkMsg(errorMsg);
+    }
+    
     return closeResults;
   } catch (error) {
     console.error('市价平仓失败:', error.response?.data || error.message);
+    
+    // 发送钉钉推送通知
+    const errorMsg = `❌ 市价平仓操作异常\n\n` +
+      `**错误信息**: ${error.message || '未知错误'}\n` +
+      `**错误详情**: ${error.response?.data ? JSON.stringify(error.response.data) : error.stack || '无'}\n` +
+      `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
+      `请及时检查系统状态！`;
+    await sendDingTalkMsg(errorMsg);
+    
     throw error;
   }
 }
@@ -289,4 +329,38 @@ async function main() {
 // 运行主函数
 //main();
 
-export { createOrder, getAccountInfo, getMarketData, getUserAllOrders, cancelAllOrders, queryPositions, closeAllPositions };
+// 动态计算订单数量：(余额 × leverage × calculationRatio ÷ 2) ÷ 市场价格，保留三位小数
+async function calculateOrderQuantity(markPrice) {
+  try {
+    if (!markPrice || markPrice <= 0) {
+      console.error('市场价格无效，使用默认订单数量');
+      return tradingConfig.order.quantity;
+    }
+    
+    const accountInfo = await getAccountInfo();
+    if (!accountInfo) {
+      console.error('获取账户信息失败，使用默认订单数量');
+      return tradingConfig.order.quantity;
+    }
+    
+    const balance = parseFloat(accountInfo.balance || 0);
+    if (isNaN(balance) || balance <= 0) {
+      console.error('无法获取有效的账户余额，使用默认订单数量');
+      return tradingConfig.order.quantity;
+    }
+    
+    const leverage = parseFloat(tradingConfig.order.leverage || 40);
+    const calculationRatio = parseFloat(tradingConfig.order.calculationRatio || 0.95);
+    // 计算：(余额 × leverage × calculationRatio ÷ 2) ÷ 市场价格
+    const orderValue = balance * leverage * calculationRatio / 2;
+    const quantity = (orderValue / markPrice).toFixed(3);
+    
+    console.log(`动态计算订单数量: 余额=${balance}, 杠杆=${leverage}, 计算比例=${calculationRatio}, 市场价格=${markPrice}, 订单价值=${orderValue.toFixed(2)}, 计算结果=${quantity}`);
+    return quantity;
+  } catch (error) {
+    console.error('计算订单数量时出错:', error.message);
+    return tradingConfig.order.quantity;
+  }
+}
+
+export { createOrder, getAccountInfo, getMarketData, getUserAllOrders, cancelAllOrders, queryPositions, closeAllPositions, calculateOrderQuantity };

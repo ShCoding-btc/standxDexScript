@@ -3,20 +3,23 @@ export const tradingConfig = {
   // 交易对
   symbol: 'BTC-USD',
   chain: 'bsc',
-  expiresSeconds: 86400,//token生效时间
-  refreshTokenSeconds: 80000,//token刷新阈值
+  expiresSeconds: 518400,//token生效时间
+  refreshTokenSeconds: 510000,//token刷新阈值
   // 订单配置
   order: {
     // 订单数量（用于创建买入和卖出订单买入卖出同数量）
-    quantity: '0.05',
+    quantity: '0.042',//动态计算失败后的兜底数量
     // 默认订单数量（用于 placeOrder 默认参数）
     defaultQuantity: '0.005',
+    // 动态计算订单数量的比例（余额 × leverage × calculationRatio ÷ 2）
+     calculationRatio: 0.91,  // 95%
     // 杠杆
     leverage: '40',
     // 时间类型
     timeInForce: 'gtc',
     // 是否只减仓
     reduceOnly: false,
+   
   },
   
   // 价格调整配置
