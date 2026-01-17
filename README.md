@@ -13,8 +13,7 @@ standxDexScript/
 ├── httpApi/                     # HTTP API 模块
 │   └── httpApi.js              # HTTP API 接口封装（创建订单、查询账户、取消订单等）
 ├── util/                        # 工具函数模块
-│   ├── authUtil.js             # 认证工具（Ed25519 签名、密钥生成等）
-│   ├── refreshToken.js          # Token 刷新工具（自动获取和刷新访问令牌）
+│   ├── authUtil.js             # 认证工具（Ed25519 签名、请求签名等）
 │   ├── validateBalance.js       # 余额校验工具（检查账户余额是否充足）
 │   └── dingTalk.js              # 钉钉消息推送工具（WebSocket断开、平仓失败等通知）
 └── wssApi/                      # WebSocket API 模块
@@ -63,27 +62,18 @@ export const tradingConfig = {
 在项目根目录创建 `.env` 文件，并配置以下环境变量：
 
 ```env
-# 钱包配置（如果不存在会自动生成）
-WALLET_ADDRESS=你的钱包地址
-PRIVATE_KEY=你的私钥
-
-# Ed25519 密钥对（程序会自动生成）
-PRIVATE_KEY_ED25519=
-PUBLIC_KEY_ED25519=
-REQUEST_ID=
-
-# Token（程序会自动获取并更新）
-TOKEN=
+# API配置（必须配置，请访问 https://standx.com/user/session 获取）
+API_TOKEN=你的API_TOKEN
+PRIVATE_KEY_ED25519=你的PRIVATE_KEY_ED25519
 
 # 钉钉机器人Webhook地址（可选，用于接收系统通知）
 DINGTALK_WEBHOOK=你的钉钉机器人Webhook地址
 ```
 
 **重要提示：**
+- **`API_TOKEN`**：必须配置。请访问 [https://standx.com/user/session](https://standx.com/user/session) 生成并获取 API Token
+- **`PRIVATE_KEY_ED25519`**：必须配置。请访问 [https://standx.com/user/session](https://standx.com/user/session) 生成并获取 Private Key (Ed25519)
 - `chain` 和 `expiresSeconds` 现在在 `config.js` 中配置，不再需要环境变量
-- `WALLET_ADDRESS` 和 `PRIVATE_KEY`：如果未配置，程序会自动生成新的钱包并保存到 `.env` 文件
-- `PRIVATE_KEY_ED25519`、`PUBLIC_KEY_ED25519`、`REQUEST_ID`：程序会在首次运行时自动生成
-- `TOKEN`：程序会在首次运行时自动获取并定期刷新
 - `DINGTALK_WEBHOOK`：可选配置，用于接收系统异常通知（WebSocket断开、平仓失败等）
 
 ### 运行项目
@@ -102,15 +92,21 @@ node index.js
 
 ### 主要功能
 
-#### 1. 自动 Token 管理
+#### 1. 环境变量检查
 
-程序启动时会自动：
-- 生成或使用现有的钱包地址和私钥
-- 生成 Ed25519 密钥对用于请求签名
-- 获取访问令牌（Token）
-- 定期刷新 Token（刷新间隔在 `config.js` 中的 `expiresSeconds` 配置）
+程序启动时会自动检查必要的环境变量：
+- **API_TOKEN**：如果未配置，程序会提示并引导用户前往 [https://standx.com/user/session](https://standx.com/user/session) 获取
+- **PRIVATE_KEY_ED25519**：如果未配置，程序会提示并引导用户前往 [https://standx.com/user/session](https://standx.com/user/session) 获取
+- 所有必需的环境变量配置完成后，程序才会继续执行
 
-#### 2. 自动交易功能
+#### 2. 余额检查与通知
+
+程序启动后会：
+- 自动检查账户余额是否充足
+- 余额检查完成后通过钉钉发送启动成功通知（如果配置了钉钉Webhook）
+- 如果余额不足，程序会提示并退出
+
+#### 3. 自动交易功能
 
 程序会：
 - 连接到 StandX WebSocket API
@@ -118,7 +114,7 @@ node index.js
 - 根据配置的价格调整比例自动创建买入和卖出限价单
 - 监控价格差值，当价格差值超出阈值时自动取消订单并重新下单
 
-#### 3. 自动持仓监控与平仓
+#### 4. 自动持仓监控与平仓
 
 程序会：
 - 实时检测用户持仓情况
@@ -126,7 +122,7 @@ node index.js
 - 自动创建市价平仓订单（与持仓方向相反，数量相等，reduce_only=true）
 - 首次下单前不进行持仓检测
 
-#### 4. 动态订单数量计算
+#### 5. 动态订单数量计算
 
 订单数量会根据以下公式动态计算：
 ```
@@ -135,7 +131,7 @@ node index.js
 - 计算比例可在 `config.js` 中的 `order.calculationRatio` 配置（默认 0.95，即 95%）
 - 如果计算失败，会使用配置中的默认订单数量作为兜底
 
-#### 5. 钉钉消息推送（可选）
+#### 6. 钉钉消息推送（可选）
 
 如果配置了 `DINGTALK_WEBHOOK`，程序会在以下情况自动发送钉钉通知：
 - **WebSocket 连接断开**：当 ws-api 连接断开时发送通知
@@ -143,7 +139,7 @@ node index.js
 - **平仓失败**：当平仓操作失败时，发送包含失败详情的通知
 - **平仓检测异常**：当持仓检测过程中出现异常时发送通知
 
-#### 6. 交易配置
+#### 7. 交易配置
 
 在 `config.js` 文件中可以配置：
 
@@ -215,15 +211,16 @@ export const tradingConfig = {
 
 ### 程序执行流程
 
-1. **初始化阶段**
-   - 加载配置文件和环境变量
-   - 初始化 Token（如果不存在则获取新 Token）
-   - 启动 Token 自动刷新机制
+1. **环境变量检查阶段**
+   - 检查 `API_TOKEN` 是否存在，如果不存在则提示用户前往 [https://standx.com/user/session](https://standx.com/user/session) 获取
+   - 检查 `PRIVATE_KEY_ED25519` 是否存在，如果不存在则提示用户前往 [https://standx.com/user/session](https://standx.com/user/session) 获取
+   - 所有必需环境变量配置完成后，程序继续执行
 
 2. **余额检查阶段**
    - 查询账户余额
    - 验证余额是否充足
    - 如果余额不足，程序会提示并退出
+   - 余额检查完成后，发送钉钉启动成功通知（如果配置了钉钉Webhook）
 
 3. **连接阶段**
    - 连接到 StandX WebSocket API
@@ -259,19 +256,16 @@ export const tradingConfig = {
 
 ### 环境变量配置（.env）
 
-| 变量名 | 说明 | 是否必需 | 默认行为 |
+| 变量名 | 说明 | 是否必需 | 获取方式 |
 |--------|------|----------|----------|
-| `WALLET_ADDRESS` | 钱包地址 | 否 | 自动生成 |
-| `PRIVATE_KEY` | 钱包私钥 | 否 | 自动生成 |
-| `PRIVATE_KEY_ED25519` | Ed25519 私钥 | 否 | 自动生成 |
-| `PUBLIC_KEY_ED25519` | Ed25519 公钥 | 否 | 自动生成 |
-| `REQUEST_ID` | 请求 ID | 否 | 自动生成 |
-| `TOKEN` | 访问令牌 | 否 | 自动获取 |
-| `DINGTALK_WEBHOOK` | 钉钉机器人Webhook地址 | 否 | 不配置则不发送通知 |
+| `API_TOKEN` | API访问令牌 | **是** | 访问 [https://standx.com/user/session](https://standx.com/user/session) 生成并获取 |
+| `PRIVATE_KEY_ED25519` | Ed25519 私钥（用于请求签名） | **是** | 访问 [https://standx.com/user/session](https://standx.com/user/session) 生成并获取 |
+| `DINGTALK_WEBHOOK` | 钉钉机器人Webhook地址 | 否 | 配置钉钉机器人后获取，不配置则不发送通知 |
 
-**注意**：
+**重要提示**：
+- `API_TOKEN` 和 `PRIVATE_KEY_ED25519` 是**必需配置**，未配置时程序会提示并引导你前往 [https://standx.com/user/session](https://standx.com/user/session) 获取
 - `chain` 和 `expiresSeconds` 现在在 `config.js` 中配置，不再需要环境变量
-- `DINGTALK_WEBHOOK` 为可选配置，配置后可在 WebSocket 断开、平仓失败等异常情况时接收钉钉通知
+- `DINGTALK_WEBHOOK` 为可选配置，配置后可在系统启动、WebSocket 断开、平仓失败等异常情况时接收钉钉通知
 
 ## 🔒 安全提示
 
@@ -297,20 +291,20 @@ export const tradingConfig = {
 
 ### 常见问题
 
-1. **Token 获取失败**
-   - 检查网络连接
-   - 确认 `config.js` 中的 `chain` 配置正确（如 'bsc', 'eth' 等）
-   - 检查钱包地址和私钥是否正确
-   - 查看控制台输出的详细错误信息
+1. **未配置 API_TOKEN 或 PRIVATE_KEY_ED25519**
+   - 访问 [https://standx.com/user/session](https://standx.com/user/session)
+   - 在页面上生成并获取 `API_TOKEN` 和 `PRIVATE_KEY_ED25519`
+   - 将获取的值添加到 `.env` 文件中
+   - 重新运行程序
 
 2. **余额检查失败**
    - 检查账户余额是否充足
-   - 确认钱包地址是否正确
+   - 确认 `API_TOKEN` 是否正确有效
    - 查看控制台输出的余额检查详情
 
 3. **WebSocket 连接失败**
    - 检查网络连接
-   - 确认 Token 是否有效
+   - 确认 `API_TOKEN` 是否有效
    - 查看控制台错误信息
 
 4. **订单创建失败**

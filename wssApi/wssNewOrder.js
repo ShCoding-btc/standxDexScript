@@ -100,9 +100,15 @@ class StandXOrderWebSocket {
   }
  //认证登录 
   authenticate() {
-    const token = process.env.TOKEN;
+    const token = process.env.API_TOKEN;
     if (!token) {
-      console.error('未找到TOKEN，请先运行index.js文件获取token');
+      console.error('❌ 未配置 API_TOKEN');
+      console.error('='.repeat(60));
+      console.error('\n请按照以下步骤配置：');
+      console.error('1. 访问 https://standx.com/user/session');
+      console.error('2. 在页面上生成并获取 API Token');
+      console.error('3. 在 .env 文件中添加：API_TOKEN=你的API_TOKEN');
+      console.error('\n配置完成后重新运行程序。\n');
       return;
     }
 
