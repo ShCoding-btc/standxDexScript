@@ -83,7 +83,6 @@ class StandXOrderWebSocket {
       // 发送钉钉推送通知
       const errorMsg = `⚠️ WebSocket连接错误\n\n` +
         `**连接类型**: ws-api\n` +
-        `**错误信息**: ${error.message || JSON.stringify(error)}\n` +
         `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
         `请及时检查连接状态！`;
       await sendDingTalkMsg(errorMsg);
@@ -94,8 +93,6 @@ class StandXOrderWebSocket {
       // 发送钉钉推送通知
       const closeMsg = `⚠️ WebSocket连接已断开\n\n` +
         `**连接类型**: ws-api\n` +
-        `**关闭代码**: ${code}\n` +
-        `**关闭原因**: ${reason?.toString() || '未知'}\n` +
         `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
         `请及时检查连接状态！`;
       await sendDingTalkMsg(closeMsg);
@@ -202,8 +199,6 @@ class StandXOrderWebSocket {
             ).join('\n');
             
             const errorMsg = `❌ 平仓操作失败\n\n` +
-              `**失败数量**: ${failedResults.length}/${closeResults.length}\n` +
-              `**失败详情**:\n${errorDetails}\n` +
               `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
               `请及时检查并手动处理！`;
             await sendDingTalkMsg(errorMsg);
@@ -214,8 +209,6 @@ class StandXOrderWebSocket {
       console.error('检测持仓并平仓时出错:', error.message);
       // 发送钉钉推送通知
       const errorMsg = `❌ 检测持仓并平仓时出错\n\n` +
-        `**错误信息**: ${error.message}\n` +
-        `**错误堆栈**: ${error.stack || '无'}\n` +
         `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
         `请及时检查系统状态！`;
       await sendDingTalkMsg(errorMsg);

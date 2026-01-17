@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { initToken } from './util/refreshToken.js';
 import StandXOrderWebSocket from './wssApi/wssNewOrder.js';
 import { validateBalance } from './util/validateBalance.js';
+import { sendDingTalkMsg } from './util/dingTalk.js';
+import { tradingConfig } from './config.js';
 
 // 主函数
 async function main() {
@@ -14,6 +16,14 @@ async function main() {
       console.error('Token初始化失败，程序退出');
       process.exit(1);
     }
+    
+    // Token初始化成功，发送钉钉通知
+    console.log('Token初始化成功');
+    const successMsg = `✅ 系统启动成功\n\n` +
+      `**状态**: Token初始化成功\n` +
+      `**时间**: ${new Date().toLocaleString('zh-CN')}\n` +
+      `交易系统已启动，开始监控市场...`;
+    await sendDingTalkMsg(successMsg);
     // 第二步：校验账户余额是否充足
     console.log('步骤2: 检查账户余额...');
     const balanceResult = await validateBalance();

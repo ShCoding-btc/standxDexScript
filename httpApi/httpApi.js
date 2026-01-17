@@ -280,9 +280,6 @@ async function closeAllPositions(symbol = null) {
         .join('\n');
       
       const errorMsg = `❌ 市价平仓操作失败\n\n` +
-        `**失败数量**: ${failCount}/${closeResults.length}\n` +
-        `**成功数量**: ${successCount}\n` +
-        `**失败详情**:\n${errorDetails}\n` +
         `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
         `请及时检查并手动处理！`;
       await sendDingTalkMsg(errorMsg);
@@ -294,8 +291,6 @@ async function closeAllPositions(symbol = null) {
     
     // 发送钉钉推送通知
     const errorMsg = `❌ 市价平仓操作异常\n\n` +
-      `**错误信息**: ${error.message || '未知错误'}\n` +
-      `**错误详情**: ${error.response?.data ? JSON.stringify(error.response.data) : error.stack || '无'}\n` +
       `**时间**: ${new Date().toLocaleString('zh-CN')}\n\n` +
       `请及时检查系统状态！`;
     await sendDingTalkMsg(errorMsg);
